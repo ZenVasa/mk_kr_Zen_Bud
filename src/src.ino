@@ -1,24 +1,72 @@
 #include "Tone.h"
-//#include "LiquidCrystal_I2C.h"
+#include "LiquidCrystal_I2C.h"
 
+constexpr byte encPinA{6};  // CLK
+constexpr byte encPinB{5};  // DT
 constexpr byte Speaker_pin{11};
-constexpr byte Potentiom_pin{A1};
-constexpr byte Sound_on_pin{A1};
+constexpr byte Potentiom_pin{A1}; // Аналоговый вход для потенциометра
+constexpr byte encBut{2}; // Кнопка энкодера (ОК)
+constexpr byte button{3}; // Кнопка переключения между сигналами
 
-//LiquidCrystal_I2C lcd(0x27,20,4); // Инициализация дисплея
+LiquidCrystal_I2C lcd(0x27,20,4); // Инициализация дисплея
 Tone tone1; // Инициализация источника звука
 
 void setup(){
     tone1.begin(Speaker_pin);    // Назначение вывода для динамика
     pinMode(Potentiom_pin, INPUT); // Назначение вывода для потенциометра
-    pinMode(Sound_on_pin, INPUT); 
     Serial.begin(115200); 
 }
 
 
+
+
 void loop(){
-    tone1.play(map(analogRead(Potentiom_pin), 0, 1023, 200, 1200));
-    Serial.println(map(analogRead(Potentiom_pin), 0, 1023, 20, 1200));
+    tone1.play(map(analogRead(Potentiom_pin), 0, 1023, 20, 1000));
+    Serial.println(map(analogRead(Potentiom_pin), 0, 1023, 20, 1000));
+    delay(100);
     }
 
+// Переменные значений на выводах энкодера
+bool encA;
+bool encB;
 
+byte prevState; // Предыдущие значения на выводах энкодера
+
+int enc_val = 0;
+
+volatile bool enc_flag = false; 
+volatile bool set_flag = false;
+
+
+void encoder(){
+  enc_val = 0;
+  encA = digitalRead(encPinA);
+  encB = digitalRead(encPinB);
+  if ((encA) && (encB)){
+    if (prevState==B00000001){
+      enc_val = -1;
+    }
+    else if (prevState==B00000010){
+      enc_val = 1;
+    }
+    prevState=B00000011;
+  }
+  else if ((!encA) && (encB)){
+    if (prevState==B00000000){
+      enc_val = -1;
+    }
+    else if (prevState==B00000011){
+      enc_val = 1;
+    }
+    prevState=B00000001;
+  }
+  else if ((encA) && (!encB)){
+    if (prevState==B00000011){
+      enc_val = -1;
+    }
+    else if (prevState==B00000000){
+      enc_val = 1;
+    }
+    prevState=B00000010;
+  }  
+}
