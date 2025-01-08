@@ -8,22 +8,28 @@ constexpr byte Potentiom_pin{A1}; // Аналоговый вход для пот
 constexpr byte encBut{2}; // Кнопка энкодера (ОК)
 constexpr byte button{3}; // Кнопка переключения между сигналами
 
-LiquidCrystal_I2C lcd(0x27,20,4); // Инициализация дисплея
+LiquidCrystal_I2C lcd(0x27,20,4); // Инициализация дисплея. SCL(A5), SDA(A4).
 Tone tone1; // Инициализация источника звука
 
 void setup(){
     tone1.begin(Speaker_pin);    // Назначение вывода для динамика
     pinMode(Potentiom_pin, INPUT); // Назначение вывода для потенциометра
     Serial.begin(115200); 
+    //attachInterrupt(0, encoder_flag, FALLING); // Подключение прерывания
+    //attachInterrupt(1, settings_flag, FALLING);
+    lcd.init(); // Инициализация дисплея
+    lcd.backlight();
 }
 
 
 
 
 void loop(){
-    tone1.play(map(analogRead(Potentiom_pin), 0, 1023, 20, 1000));
-    Serial.println(map(analogRead(Potentiom_pin), 0, 1023, 20, 1000));
-    delay(100);
+    lcd.setCursor(3,2);
+    lcd.print("Hello world!");
+    //tone1.play(map(analogRead(Potentiom_pin), 0, 1023, 20, 1000));
+    //Serial.println(map(analogRead(Potentiom_pin), 0, 1023, 20, 1000));
+    //delay(100);
     }
 
 // Переменные значений на выводах энкодера
