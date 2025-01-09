@@ -3,17 +3,19 @@
 
 constexpr byte encPinA{6};  // CLK
 constexpr byte encPinB{5};  // DT
-constexpr byte Speaker_pin{11};
-constexpr byte Potentiom_pin{A1}; // Аналоговый вход для потенциометра
-constexpr byte enc_button{2}; // Кнопка энкодера 
+constexpr byte Speaker_pin{11}; // Вывод звукового сигнала
+constexpr byte enc_button{2}; // Кнопка энкодера (Вкл/Выкл настройку частоты)
 constexpr byte switch_button{3}; // Кнопка переключения между сигналами
+constexpr int freq_down{50}; // Нижняя граница частотного диапазона
+constexpr int freq_up{5000}; // Верхняя граница частотного диапазона
 
 volatile bool adj_flag = false; 
+volatile bool adj_print = true; 
 volatile bool switch_flag = false; 
 volatile bool cursor_switch = true; 
 
 LiquidCrystal_I2C lcd(0x27,20,4); // Инициализация дисплея. SCL(A5), SDA(A4).
-Tone speaker; // Инициализация источника звука
+Tone speaker; // Создание объекта speaker класса Tone
 
 int Freq1 = 100; // Частота первого сигнала
 int Freq2 = 100; // Частота второго сигнала
@@ -21,12 +23,12 @@ int Freq2 = 100; // Частота второго сигнала
 int enc_val = 0;
 
 void setup(){
-    speaker.begin(Speaker_pin);    // Назначение вывода для динамика
+    speaker.begin(Speaker_pin);    // Инициализация и назначение вывода для динамика
     pinMode(enc_button, INPUT_PULLUP);
     pinMode(switch_button, INPUT_PULLUP);
     Serial.begin(115200); 
-    attachInterrupt(0, adj_func, FALLING); // Подключение прерывания на кнопку энкодера
-    attachInterrupt(1, switch_func, FALLING); // Подключение прерывания на кнопку переключения сигнала
+    attachInterrupt(0, adj_func, FALLING); // Подключение прерывания на кнопку энкодера по спаду
+    attachInterrupt(1, switch_func, FALLING); // Подключение прерывания на кнопку переключения сигнала по спаду
 
     lcd.init(); // Инициализация дисплея
     lcd.backlight();
@@ -40,47 +42,48 @@ void setup(){
 
 void loop(){
 
-  if (adj_flag){  // Работа в режиме настройки частоты
-    lcd.setCursor(0,3);
-    lcd.print("ADJ");
+  print_adj();
+  cursor();
+
+  if (adj_flag){  // Работа в режиме регулировки частоты
     adjustment();
   } 
 
-  else{ // Работа в режиме обычного воспроизведения
-    cursor();
-    play_tone();
-    lcd.setCursor(0,3);
-    lcd.print("   ");
-  }
-
-  
-  speaker.play(Freq1);
+  play_tone();  // Функция воспроизведения выбранного сигнала
     }
 
 
 
 
-void adjustment(){
-  while (adj_flag)
-    {
-      cursor();
-      encoder(); // Считываем вращение энкодера
+void adjustment(){ // Функция регулировки частоты
 
-      if (enc_val != 0){ // Проверка на поворот энкодера
+  encoder(); // Считываем вращение энкодера
 
-        if (switch_flag){    
-          Freq1 += enc_val;
-          print_value(3, 1, Freq1);
-          }
+  if (enc_val != 0){ // Проверка на поворот энкодера
 
-        else{
-          Freq2 += enc_val;
-          print_value(3, 2, Freq2);
-          }
-        }
-      play_tone();
-      }        
+    if (switch_flag){    
+      Freq1 = check_freq_range(Freq1 + enc_val);
+      print_value(3, 1, Freq1);
+      }
+
+    else{
+      Freq2 = check_freq_range(Freq2 + enc_val);
+      print_value(3, 2, Freq2);
+      }
+    }
+  }
+
+int check_freq_range(int freq){
+
+  if (freq < freq_down){
+    return freq_up;
 }
+  else if (freq > freq_up){
+    return freq_down;
+  }
+  return freq;
+}
+        
 
 void play_tone(){
   if (switch_flag){    
@@ -92,16 +95,16 @@ void play_tone(){
     }
 }
 
-void start_screen(){
-    lcd.setCursor(7,1);
-    lcd.print("Hello");
-    lcd.setCursor(7,2);
-    lcd.print("World");
+void start_screen(){  // Вывод на дисплей названия устройства
+    lcd.setCursor(5,1);
+    lcd.print("Two-tone");
+    lcd.setCursor(6,2);
+    lcd.print("Emitter");
     delay(2000);
     lcd.clear();
 }
 
-void display_info(){
+void display_info(){  // Вывод основной информации
     lcd.setCursor(0,0);
     lcd.print("Tones:");
     lcd.setCursor(0,1);
@@ -122,20 +125,36 @@ void display_info(){
 void cursor(){
   if (cursor_switch){
     if (switch_flag){    
-            lcd.setCursor(12,1);
-            lcd.print("<<<");
-            lcd.setCursor(12,2);
-            lcd.print("   ");
-            }
+      lcd.setCursor(12,1);
+      lcd.print("<<<");
+      lcd.setCursor(12,2);
+      lcd.print("   ");
+      }
 
-          else{
-            lcd.setCursor(12,2);
-            lcd.print("<<<");
-            lcd.setCursor(12,1);
-            lcd.print("   ");
-            }
+  else{
+    lcd.setCursor(12,2);
+    lcd.print("<<<");
+    lcd.setCursor(12,1);
+    lcd.print("   ");
+    }
   }
   cursor_switch = false;
+}
+
+void print_adj(){
+  if (adj_print){
+
+    if (adj_flag){
+      lcd.setCursor(0,3);
+      lcd.print("ADJ");
+    }
+
+    else{
+      lcd.setCursor(0,3);
+      lcd.print("   ");
+    }
+  }
+  adj_print = false;
 }
 
 volatile uint32_t debounce;
@@ -144,6 +163,7 @@ void adj_func(){ // Немедленно выполняется при нажа�
   if (millis() - debounce >= 250) {
     debounce = millis();
     adj_flag = !adj_flag;
+    adj_print = true;
     }
 }
 
@@ -151,7 +171,7 @@ void switch_func(){ // Немедленно выполняется при наж
   if (millis() - debounce >= 250) {
     debounce = millis();
     switch_flag = !switch_flag;
-    cursor_switch = !cursor_switch;
+    cursor_switch = true; // Чтобы оптимизировать программу и не выводить каждую итерацию курсор
     }
 }
 
