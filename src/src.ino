@@ -20,13 +20,16 @@ Tone speaker; // Создание объекта speaker класса Tone
 int Freq1 = 100; // Частота первого сигнала
 int Freq2 = 100; // Частота второго сигнала
 
+
 int enc_val = 0;
+int enc_val_increment = 1;
+int acceleration_coef = 1;
+uint32_t increment_timer = 0;
 
 void setup(){
     speaker.begin(Speaker_pin);    // Инициализация и назначение вывода для динамика
     pinMode(enc_button, INPUT_PULLUP);
     pinMode(switch_button, INPUT_PULLUP);
-    Serial.begin(115200); 
     attachInterrupt(0, adj_func, FALLING); // Подключение прерывания на кнопку энкодера по спаду
     attachInterrupt(1, switch_func, FALLING); // Подключение прерывания на кнопку переключения сигнала по спаду
 
@@ -50,7 +53,7 @@ void loop(){
   } 
 
   play_tone();  // Функция воспроизведения выбранного сигнала
-    }
+  }
 
 
 
@@ -58,16 +61,17 @@ void loop(){
 void adjustment(){ // Функция регулировки частоты
 
   encoder(); // Считываем вращение энкодера
+  acceleration_enc();
 
   if (enc_val != 0){ // Проверка на поворот энкодера
-
+    enc_val_increment += abs(enc_val);
     if (switch_flag){    
-      Freq1 = check_freq_range(Freq1 + enc_val);
+      Freq1 = check_freq_range(Freq1 + enc_val*acceleration_coef);
       print_value(3, 1, Freq1);
       }
 
     else{
-      Freq2 = check_freq_range(Freq2 + enc_val);
+      Freq2 = check_freq_range(Freq2 + enc_val*acceleration_coef);
       print_value(3, 2, Freq2);
       }
     }
@@ -122,7 +126,7 @@ void display_info(){  // Вывод основной информации
     cursor();
 }
 
-void cursor(){
+void cursor(){  // Вывод на дисплей курсора, указывающего на выбранный сигнал
   if (cursor_switch){
     if (switch_flag){    
       lcd.setCursor(12,1);
@@ -141,34 +145,34 @@ void cursor(){
   cursor_switch = false;
 }
 
-void print_adj(){
-  if (adj_print){
+void print_adj(){ // Вывод на дисплей сообщения о том, что включён режим регулировки
+  if (adj_print){ // Проверка: выводилось ли сообщение ранее
 
-    if (adj_flag){
+    if (adj_flag){  // Режим регулирования включён
       lcd.setCursor(0,3);
       lcd.print("ADJ");
     }
 
-    else{
+    else{ // Режим регулирования выключен
       lcd.setCursor(0,3);
       lcd.print("   ");
     }
   }
-  adj_print = false;
+  adj_print = false;  // Чтобы сообщение не выводилось каждую итерацию
 }
 
-volatile uint32_t debounce;
+volatile uint32_t debounce{0}; // Переменнная для значения таймера
 
 void adj_func(){ // Немедленно выполняется при нажатии кнопки энкодера
-  if (millis() - debounce >= 250) {
+  if (millis() - debounce >= 250) {  // Защита от дребезга контактов
     debounce = millis();
     adj_flag = !adj_flag;
-    adj_print = true;
+    adj_print = true; // Чтобы оптимизировать программу и не выводить каждую итерацию "ADJ"
     }
 }
 
 void switch_func(){ // Немедленно выполняется при нажатии кнопки переключения сигнала
-  if (millis() - debounce >= 250) {
+  if (millis() - debounce >= 250) {  // Защита от дребезга контактов
     debounce = millis();
     switch_flag = !switch_flag;
     cursor_switch = true; // Чтобы оптимизировать программу и не выводить каждую итерацию курсор
@@ -212,6 +216,22 @@ void encoder(){ // Программа для считывания вращени
     }
     prevState=B00000010;
   }  
+}
+
+void acceleration_enc(){
+  if (((millis() - increment_timer) < 300) && (enc_val_increment <= 5)){
+    acceleration_coef = 1;
+  }
+
+  else if (((millis() - increment_timer) < 300) && (enc_val_increment > 5)){
+    acceleration_coef = enc_val_increment * 2;
+  }
+
+  else {
+    increment_timer = millis();
+    enc_val_increment = 1;
+    acceleration_coef = 1;
+}
 }
 
 void print_value(int col, int line, int value){ // Корректно печатает значения до 9999
