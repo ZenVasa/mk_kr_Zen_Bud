@@ -14,13 +14,14 @@ volatile bool adj_print = true;
 volatile byte switch_mode = 0; // Режим работы 
 // 0 - Вопроизведение первого сигнала. 1 - Воспроизведение второго сигнала. 2 - Режим сирены.
 volatile bool cursor_switch = true; 
+volatile bool siren_config = true;
 
 LiquidCrystal_I2C lcd(0x27,20,4); // Инициализация дисплея. SCL(A5), SDA(A4).
 Tone speaker; // Создание объекта speaker класса Tone
 
 int Freq1 = 100; // Частота первого сигнала
 int Freq2 = 100; // Частота второго сигнала
-int siren_duration = 100; // Продолжительность изменения сигнала сирены
+unsigned int siren_duration = 1000; // Продолжительность изменения сигнала сирены
 
 
 
@@ -40,9 +41,10 @@ void setup(){
     lcd.backlight();
     
     start_screen();
-    delay(2000);
+    delay(1000);
     lcd.clear();
     display_info();
+    Serial.begin(115200);
 }
 
 
@@ -58,7 +60,7 @@ void loop(){
 
   play_mode_tone();  // Функция воспроизведения выбранного сигнала
 
-    cursor(); // Вывод курсора
+  cursor(); // Вывод курсора
   }
 
 
@@ -80,8 +82,14 @@ void adjustment(){ // Функция регулировки частоты
       print_value(3, 2, Freq2);
       }
     else{
-      siren_duration += enc_val;
-      print_value(16, 3, siren_duration);
+      siren_duration = check_time(siren_duration+enc_val*100*acceleration_coef);
+      siren_config = true;
+
+      print_value(10, 3, siren_duration / 1000);
+      lcd.setCursor(14,3);
+      lcd.print(".");
+      lcd.setCursor(15,3);
+      lcd.print((siren_duration-(siren_duration/1000)*1000)/100);
     }
     }
   }
@@ -95,6 +103,16 @@ int check_freq_range(int freq){
     return freq_down;
   }
   return freq;
+}
+
+int check_time(unsigned int time){
+  if (time < 100){
+    return 60000;
+  }
+  else if (time > 60000){
+    return 100;
+  }
+  return time;
 }
         
 
@@ -112,20 +130,26 @@ void play_mode_tone(){
 }
 
 int Freq_increment;
-int freq_duration;
+uint32_t freq_duration;
 int start_freq;
 int end_freq;
-int siren_timer{0};
+uint64_t siren_timer{0};
 bool freq_up_or_down = true;  // True - Частота сигнала увеличивается, False - уменьшается
-int current_freq = 100; // Частота, воспроизводимая в моменте режима сирены
+int current_freq; // Частота, воспроизводимая в моменте режима сирены
+bool similar_freq = false;
 
 void siren_mode(){
-  if (cursor_switch || (enc_val >= 1 && adj_flag)){  // Выполняется 1 раз при переключении на этот режим, либо изменении продолжительности сирены
+  if (siren_config){  // Выполняется 1 раз при переключении на этот режим и изменении периода сирены
+    siren_duration = check_time(siren_duration);
+    siren_config = false;
     Freq_increment = abs(Freq1 - Freq2);
     if (Freq_increment == 0){
-    speaker.play(Freq1);
+      speaker.play(Freq1);
+      similar_freq = true;
     }
+
     else {
+      similar_freq = false;
       if (Freq1 > Freq2){
         start_freq = Freq2;
         end_freq = Freq1;
@@ -134,27 +158,32 @@ void siren_mode(){
         start_freq = Freq1;
         end_freq = Freq2;
       }
-      siren_timer = millis();
-      freq_duration = siren_duration / Freq_increment;  // Расчёт длительности изменения сигнала на 1 Гц
+      siren_timer = micros();
+      uint32_t siren_duration_micros{siren_duration};
+      freq_duration = siren_duration_micros*1000 / Freq_increment;  // Расчёт длительности изменения сигнала на 1 Гц
       current_freq = start_freq;
+      Serial.println(freq_duration);
     }
   }
 
-  if (millis() - siren_timer >= freq_duration) {
-    if(freq_up_or_down){
-      current_freq += 1;
-      if (current_freq > end_freq){
-        current_freq = start_freq;
-        freq_up_or_down = false;
+  if (!similar_freq){
+    if (micros() - siren_timer >= freq_duration) {
+      if(freq_up_or_down){
+        current_freq += 1;
+        if (current_freq >= end_freq){
+          freq_up_or_down = false;
+        }
       }
+      else{
+        current_freq -= 1;
+        if (current_freq <= start_freq){
+          freq_up_or_down = true;
+        }
+      }
+      siren_timer = micros();
+      speaker.play(current_freq);
     }
-    else{
-
-    }
-    debounce = millis();
-    switch_mode += 1;
   }
-
 }
 
 void start_screen(){  // Вывод на дисплей названия устройства
@@ -176,9 +205,9 @@ void display_info(){  // Вывод основной информации
     lcd.setCursor(4,2);
     lcd.print(Freq2);
     lcd.setCursor(0,3);
-    lcd.print("Siren. Time:");
-    lcd.setCursor(16,3);
-    lcd.print(siren_duration);
+    lcd.print("Siren.Time:");
+    lcd.setCursor(13,3);
+    lcd.print("1.0");
     lcd.setCursor(8,1);
     lcd.print("Hz");
     lcd.setCursor(8,2);
@@ -191,8 +220,6 @@ void cursor(){  // Вывод на дисплей курсора, указыва
     if (switch_mode == 0){    
       lcd.setCursor(12,1);
       lcd.print("<<<");
-      lcd.setCursor(12,3);
-      lcd.print("   ");
       }
 
     else if (switch_mode == 1){
@@ -202,8 +229,6 @@ void cursor(){  // Вывод на дисплей курсора, указыва
       lcd.print("   ");
     }
     else{
-      lcd.setCursor(12,3);
-      lcd.print("<<<");
       lcd.setCursor(12,2);
       lcd.print("   ");
     }
@@ -246,6 +271,7 @@ void switch_func(){ // Немедленно выполняется при наж
       switch_mode = 0;
     }
     cursor_switch = true; // Чтобы оптимизировать программу и не выводить каждую итерацию курсор
+    siren_config = true;
     }
 }
 
