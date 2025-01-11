@@ -9,9 +9,10 @@ constexpr byte switch_button{3}; // Кнопка переключения меж
 constexpr int freq_down{50}; // Нижняя граница частотного диапазона
 constexpr int freq_up{5000}; // Верхняя граница частотного диапазона
 
-volatile bool adj_flag = false; 
+volatile bool adj_flag = false; // Флаг включения режима регулировки
 volatile bool adj_print = true; 
-volatile bool switch_flag = false; 
+volatile byte switch_mode = 0; // Режим работы 
+// 0 - Вопроизведение первого сигнала. 1 - Воспроизведение второго сигнала. 2 - Режим сирены.
 volatile bool cursor_switch = true; 
 
 LiquidCrystal_I2C lcd(0x27,20,4); // Инициализация дисплея. SCL(A5), SDA(A4).
@@ -19,6 +20,8 @@ Tone speaker; // Создание объекта speaker класса Tone
 
 int Freq1 = 100; // Частота первого сигнала
 int Freq2 = 100; // Частота второго сигнала
+int siren_duration = 100; // Продолжительность изменения сигнала сирены
+
 
 
 int enc_val = 0;
@@ -28,8 +31,8 @@ uint32_t increment_timer = 0;
 
 void setup(){
     speaker.begin(Speaker_pin);    // Инициализация и назначение вывода для динамика
-    pinMode(enc_button, INPUT_PULLUP);
-    pinMode(switch_button, INPUT_PULLUP);
+    pinMode(enc_button, INPUT_PULLUP);  // Назначение вывода для кнопки энкодера с подтяжкой к "+"
+    pinMode(switch_button, INPUT_PULLUP);  // Назначение вывода для кнопки с подтяжкой к "+"
     attachInterrupt(0, adj_func, FALLING); // Подключение прерывания на кнопку энкодера по спаду
     attachInterrupt(1, switch_func, FALLING); // Подключение прерывания на кнопку переключения сигнала по спаду
 
@@ -37,6 +40,8 @@ void setup(){
     lcd.backlight();
     
     start_screen();
+    delay(2000);
+    lcd.clear();
     display_info();
 }
 
@@ -46,13 +51,14 @@ void setup(){
 void loop(){
 
   print_adj();
-  cursor();
 
-  if (adj_flag){  // Работа в режиме регулировки частоты
+  if (adj_flag){  // Работа в режиме регулировки частоты и времени
     adjustment();
   } 
 
-  play_tone();  // Функция воспроизведения выбранного сигнала
+  play_mode_tone();  // Функция воспроизведения выбранного сигнала
+
+    cursor(); // Вывод курсора
   }
 
 
@@ -61,19 +67,22 @@ void loop(){
 void adjustment(){ // Функция регулировки частоты
 
   encoder(); // Считываем вращение энкодера
-  acceleration_enc();
-
+  
   if (enc_val != 0){ // Проверка на поворот энкодера
-    enc_val_increment += abs(enc_val);
-    if (switch_flag){    
+    acceleration_enc();
+    if (switch_mode == 0){    
       Freq1 = check_freq_range(Freq1 + enc_val*acceleration_coef);
       print_value(3, 1, Freq1);
       }
 
-    else{
+    else if (switch_mode == 1){
       Freq2 = check_freq_range(Freq2 + enc_val*acceleration_coef);
       print_value(3, 2, Freq2);
       }
+    else{
+      siren_duration += enc_val;
+      print_value(16, 3, siren_duration);
+    }
     }
   }
 
@@ -89,14 +98,63 @@ int check_freq_range(int freq){
 }
         
 
-void play_tone(){
-  if (switch_flag){    
+void play_mode_tone(){
+  if (switch_mode == 0){    
     speaker.play(Freq1);
     }
 
-  else{
+  else if (switch_mode == 1){
     speaker.play(Freq2);
     }
+  else{
+    siren_mode();
+  }
+}
+
+int Freq_increment;
+int freq_duration;
+int start_freq;
+int end_freq;
+int siren_timer{0};
+bool freq_up_or_down = true;  // True - Частота сигнала увеличивается, False - уменьшается
+int current_freq = 100; // Частота, воспроизводимая в моменте режима сирены
+
+void siren_mode(){
+  if (cursor_switch || (enc_val >= 1 && adj_flag)){  // Выполняется 1 раз при переключении на этот режим, либо изменении продолжительности сирены
+    Freq_increment = abs(Freq1 - Freq2);
+    if (Freq_increment == 0){
+    speaker.play(Freq1);
+    }
+    else {
+      if (Freq1 > Freq2){
+        start_freq = Freq2;
+        end_freq = Freq1;
+      }
+      else{
+        start_freq = Freq1;
+        end_freq = Freq2;
+      }
+      siren_timer = millis();
+      freq_duration = siren_duration / Freq_increment;  // Расчёт длительности изменения сигнала на 1 Гц
+      current_freq = start_freq;
+    }
+  }
+
+  if (millis() - siren_timer >= freq_duration) {
+    if(freq_up_or_down){
+      current_freq += 1;
+      if (current_freq > end_freq){
+        current_freq = start_freq;
+        freq_up_or_down = false;
+      }
+    }
+    else{
+
+    }
+    debounce = millis();
+    switch_mode += 1;
+  }
+
 }
 
 void start_screen(){  // Вывод на дисплей названия устройства
@@ -104,8 +162,6 @@ void start_screen(){  // Вывод на дисплей названия уст�
     lcd.print("Two-tone");
     lcd.setCursor(6,2);
     lcd.print("Emitter");
-    delay(2000);
-    lcd.clear();
 }
 
 void display_info(){  // Вывод основной информации
@@ -119,6 +175,10 @@ void display_info(){  // Вывод основной информации
     lcd.print(Freq1);
     lcd.setCursor(4,2);
     lcd.print(Freq2);
+    lcd.setCursor(0,3);
+    lcd.print("Siren. Time:");
+    lcd.setCursor(16,3);
+    lcd.print(siren_duration);
     lcd.setCursor(8,1);
     lcd.print("Hz");
     lcd.setCursor(8,2);
@@ -128,20 +188,27 @@ void display_info(){  // Вывод основной информации
 
 void cursor(){  // Вывод на дисплей курсора, указывающего на выбранный сигнал
   if (cursor_switch){
-    if (switch_flag){    
+    if (switch_mode == 0){    
       lcd.setCursor(12,1);
       lcd.print("<<<");
-      lcd.setCursor(12,2);
+      lcd.setCursor(12,3);
       lcd.print("   ");
       }
 
-  else{
-    lcd.setCursor(12,2);
-    lcd.print("<<<");
-    lcd.setCursor(12,1);
-    lcd.print("   ");
+    else if (switch_mode == 1){
+      lcd.setCursor(12,2);
+      lcd.print("<<<");
+      lcd.setCursor(12,1);
+      lcd.print("   ");
+    }
+    else{
+      lcd.setCursor(12,3);
+      lcd.print("<<<");
+      lcd.setCursor(12,2);
+      lcd.print("   ");
     }
   }
+  
   cursor_switch = false;
 }
 
@@ -149,12 +216,12 @@ void print_adj(){ // Вывод на дисплей сообщения о том
   if (adj_print){ // Проверка: выводилось ли сообщение ранее
 
     if (adj_flag){  // Режим регулирования включён
-      lcd.setCursor(0,3);
+      lcd.setCursor(17,3);
       lcd.print("ADJ");
     }
 
     else{ // Режим регулирования выключен
-      lcd.setCursor(0,3);
+      lcd.setCursor(17,3);
       lcd.print("   ");
     }
   }
@@ -174,7 +241,10 @@ void adj_func(){ // Немедленно выполняется при нажа�
 void switch_func(){ // Немедленно выполняется при нажатии кнопки переключения сигнала
   if (millis() - debounce >= 250) {  // Защита от дребезга контактов
     debounce = millis();
-    switch_flag = !switch_flag;
+    switch_mode += 1;
+    if (switch_mode == 3){
+      switch_mode = 0;
+    }
     cursor_switch = true; // Чтобы оптимизировать программу и не выводить каждую итерацию курсор
     }
 }
@@ -219,6 +289,7 @@ void encoder(){ // Программа для считывания вращени
 }
 
 void acceleration_enc(){
+  enc_val_increment +=abs(enc_val);
   if (((millis() - increment_timer) < 300) && (enc_val_increment <= 5)){
     acceleration_coef = 1;
   }
