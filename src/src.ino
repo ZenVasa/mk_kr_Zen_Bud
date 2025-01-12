@@ -106,7 +106,7 @@ int check_freq_range(int freq){   // Проверка значения част�
   return freq;
 }
 
-int check_time(unsigned int time){
+int check_time(unsigned int time){   // Проверка значения периода сирены на превышение заданных границ 
   if (time < time_down){
     return time_up;
   }
@@ -130,7 +130,9 @@ void play_mode_tone(){  // Функция, которая активирует �
   }
 }
 
-int Freq_increment;
+
+// Переменные параметров сирены
+int Freq_increment;   // Разность между 
 uint32_t freq_duration;
 int start_freq;
 int end_freq;
@@ -153,13 +155,15 @@ void siren_configuration(){   // Формирование параметров �
   siren_duration = check_time(siren_duration);
     siren_config = false;
     Freq_increment = abs(Freq1 - Freq2);
-    if (Freq_increment == 0){
+
+    if (Freq_increment == 0){  // Граничные частоты совпадают
       speaker.play(Freq1);
       similar_freq = true;
     }
 
-    else {
+    else {   // Выполянется если частоты не совпадают
       similar_freq = false;
+      // Определение начальной частоты
       if (Freq1 > Freq2){
         start_freq = Freq2;
         end_freq = Freq1;
@@ -168,9 +172,10 @@ void siren_configuration(){   // Формирование параметров �
         start_freq = Freq1;
         end_freq = Freq2;
       }
+
       siren_timer = micros();
       uint32_t siren_duration_micros{siren_duration};
-      freq_duration = siren_duration_micros*1000 / Freq_increment;  // Расчёт длительности изменения сигнала на 1 Гц
+      freq_duration = siren_duration_micros*1000 / Freq_increment;  // Расчёт длительности изменения сигнала на 1 Гц (в мкс)
       current_freq = start_freq;
     }
 }
